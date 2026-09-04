@@ -1,0 +1,6 @@
+{
+  "name": "3D Material Panel",
+  "description": "A professional 3D visualization tool for interior design, featuring dynamic room mesh generation, PBR material assignment, and high-quality rendering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
