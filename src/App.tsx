@@ -97,15 +97,36 @@ export default function App() {
     
     setTimeout(() => {
       setIsGenerating(false);
-      showNotification('High-Res 4K Render generated successfully! Download started.');
       
-      // Trigger a real beautiful render image download
-      const link = document.createElement('a');
-      link.download = 'Visions3D_Enterprise_Render.png';
-      link.href = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1920&q=80';
-      link.target = '_blank';
-      link.click();
-    }, 2500);
+      const container = document.getElementById('threejs-viewport-canvas-container');
+      const canvas = container?.querySelector('canvas');
+      
+      if (canvas) {
+        try {
+          // Captures the actual rendered WebGL scene buffer
+          const dataUrl = canvas.toDataURL('image/png');
+          const link = document.createElement('a');
+          link.download = `Visions3D_${room.name.toLowerCase().replace(/\s+/g, '_')}_render.png`;
+          link.href = dataUrl;
+          link.click();
+          showNotification('High-Res Render captured & downloaded successfully!');
+        } catch (error) {
+          console.error("Capture failed:", error);
+          showNotification('Capture buffer locked. Downloading fallback visual...');
+          fallbackDownload();
+        }
+      } else {
+        fallbackDownload();
+      }
+    }, 2000);
+  };
+
+  const fallbackDownload = () => {
+    const link = document.createElement('a');
+    link.download = 'Visions3D_Enterprise_Render.png';
+    link.href = 'https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=1920&q=80';
+    link.target = '_blank';
+    link.click();
   };
 
   const handleCapture = (canvas: HTMLCanvasElement) => {

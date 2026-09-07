@@ -72,7 +72,7 @@ interface SceneWrapperProps extends SceneProps {
 
 export const Scene = ({ room, material, facadeMaterial, floorCount, onCapture }: SceneWrapperProps) => {
   return (
-    <div className="w-full h-full bg-[#09090b] relative overflow-hidden">
+    <div id="threejs-viewport-canvas-container" className="w-full h-full bg-[#09090b] relative overflow-hidden">
       <Canvas 
         shadows 
         gl={{ preserveDrawingBuffer: true, antialias: true }}
