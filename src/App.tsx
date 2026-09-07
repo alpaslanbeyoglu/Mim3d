@@ -265,6 +265,7 @@ export default function App() {
                 {viewMode === '2D' ? (
                   <BlueprintEditor 
                     room={room} 
+                    setRoom={setRoom}
                     uploadedImage={uploadedImage} 
                   />
                 ) : (
