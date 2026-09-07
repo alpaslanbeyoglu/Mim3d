@@ -165,25 +165,25 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
   };
 
   return (
-    <div className="w-full h-full relative bg-[#09090b] flex items-center justify-center p-6 overflow-hidden select-none">
+    <div className="w-full h-full relative bg-slate-100/60 flex items-center justify-center p-6 overflow-hidden select-none">
       {/* Dynamic Background Grid Pattern */}
       <div 
-        className="absolute inset-0 opacity-[0.12] pointer-events-none transition-all duration-300" 
+        className="absolute inset-0 opacity-[0.06] pointer-events-none transition-all duration-300" 
         style={{ 
           backgroundImage: snapToGrid 
             ? 'linear-gradient(#4f46e5 1px, transparent 1px), linear-gradient(90deg, #4f46e5 1px, transparent 1px)' 
-            : 'linear-gradient(#27272a 1px, transparent 1px), linear-gradient(90deg, #27272a 1px, transparent 1px)', 
+            : 'linear-gradient(#64748b 1px, transparent 1px), linear-gradient(90deg, #64748b 1px, transparent 1px)', 
           backgroundSize: '40px 40px' 
         }}
       ></div>
 
       {/* Main Canvas Area */}
-      <div className="relative w-full h-full max-w-5xl aspect-video bg-[#111114]/90 border border-[#27272a] rounded-2xl shadow-2xl flex items-center justify-center overflow-hidden">
+      <div className="relative w-full h-full max-w-5xl aspect-video bg-white border border-slate-200 rounded-2xl shadow-xl flex items-center justify-center overflow-hidden">
         
         {/* Sketch Background Upload */}
         {uploadedImage && (
-          <div className="absolute inset-0 p-12 opacity-[0.25] pointer-events-none select-none">
-             <img src={uploadedImage} className="w-full h-full object-contain mix-blend-screen grayscale" alt="Blueprint Background" />
+          <div className="absolute inset-0 p-12 opacity-[0.15] pointer-events-none select-none">
+             <img src={uploadedImage} className="w-full h-full object-contain grayscale" alt="Blueprint Background" />
           </div>
         )}
 
@@ -197,13 +197,13 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
           onPointerLeave={handlePointerUp}
         >
           {/* Centered Axis Indicators */}
-          <line x1="-10" y1="0" x2="10" y2="0" stroke="#27272a" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
-          <line x1="0" y1="-10" x2="0" y2="10" stroke="#27272a" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
+          <line x1="-10" y1="0" x2="10" y2="0" stroke="#e2e8f0" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
+          <line x1="0" y1="-10" x2="0" y2="10" stroke="#e2e8f0" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
 
           {/* Polygon Filled Room Area */}
           <polygon 
             points={room.points.map(p => `${p.x},${p.y}`).join(' ')}
-            fill="rgba(99, 102, 241, 0.04)"
+            fill="rgba(99, 102, 241, 0.05)"
             stroke="none"
           />
 
@@ -230,9 +230,9 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
                   x2={nextP.x} 
                   y2={nextP.y} 
                   stroke="#4f46e5" 
-                  strokeWidth="0.15" 
+                  strokeWidth="0.12" 
                   strokeLinecap="round"
-                  className="pointer-events-none opacity-80"
+                  className="pointer-events-none opacity-90"
                 />
               </g>
             );
@@ -252,18 +252,18 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
                   y={my - 0.25} 
                   width="1.4" 
                   height="0.5" 
-                  rx="0.1" 
-                  fill="#18181b" 
-                  stroke="#4f46e5" 
+                  rx="0.10" 
+                  fill="#ffffff" 
+                  stroke="#6366f1" 
                   strokeWidth="0.03"
-                  className="opacity-95"
+                  className="shadow-sm"
                 />
                 <text 
                   x={mx} 
                   y={my + 0.12} 
                   textAnchor="middle" 
-                  fill="#e4e4e7" 
-                  fontSize="0.35" 
+                  fill="#1e1b4b" 
+                  fontSize="0.32" 
                   fontWeight="bold"
                   className="font-mono tracking-tight"
                 >
@@ -295,11 +295,11 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
                 <circle 
                   cx={p.x} 
                   cy={p.y} 
-                  r={isDragging ? "0.35" : isHovered ? "0.3" : "0.22"} 
-                  fill={isDragging ? "#818cf8" : isHovered ? "#6366f1" : "#1e1b4b"} 
-                  stroke="#818cf8" 
-                  strokeWidth="0.06"
-                  className="transition-all duration-150 pointer-events-none"
+                  r={isDragging ? "0.32" : isHovered ? "0.28" : "0.20"} 
+                  fill={isDragging ? "#312e81" : isHovered ? "#4f46e5" : "#6366f1"} 
+                  stroke="#ffffff" 
+                  strokeWidth="0.05"
+                  className="transition-all duration-150 pointer-events-none shadow-md"
                 />
               </g>
             );
@@ -307,53 +307,53 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
         </svg>
 
         {/* Toolbar Left Side */}
-        <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-[#18181b]/95 border border-[#27272a] p-2 rounded-xl backdrop-blur shadow-xl">
+        <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-white/95 border border-slate-200 p-2 rounded-xl backdrop-blur shadow-lg">
            <button 
              onClick={() => setSnapToGrid(!snapToGrid)}
              title="Grid Snapping"
-             className={`p-2.5 rounded-lg border flex items-center gap-2 transition-all text-xs font-bold ${snapToGrid ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-zinc-900 border-[#27272a] text-zinc-400 hover:text-white'}`}
+             className={`p-2.5 rounded-lg border flex items-center gap-2 transition-all text-xs font-bold ${snapToGrid ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-100 border-slate-200 text-slate-600 hover:text-slate-800'}`}
            >
               <Grid className="w-4 h-4" />
               <span>SNAP: {snapToGrid ? "0.5m" : "FREE"}</span>
            </button>
            
-           <div className="h-[1px] bg-[#27272a] mx-1 my-1" />
+           <div className="h-[1px] bg-slate-100 mx-1 my-1" />
            
            <div className="flex flex-col gap-1">
-             <span className="text-[9px] font-bold text-zinc-500 uppercase tracking-widest px-2 mb-1">Presets</span>
+             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-2 mb-1">Presets</span>
              <button 
                onClick={() => applyPreset('square')}
-               className="p-2 text-left hover:bg-zinc-800 rounded text-xs font-medium text-zinc-300 flex items-center gap-2 transition-all"
+               className="p-2 text-left hover:bg-slate-50 rounded text-xs font-semibold text-slate-600 flex items-center gap-2 transition-all"
              >
-                <LayoutTemplate className="w-3.5 h-3.5 text-zinc-500" />
+                <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
                 <span>Square Plan</span>
              </button>
              <button 
                onClick={() => applyPreset('l-shape')}
-               className="p-2 text-left hover:bg-zinc-800 rounded text-xs font-medium text-zinc-300 flex items-center gap-2 transition-all"
+               className="p-2 text-left hover:bg-slate-50 rounded text-xs font-semibold text-slate-600 flex items-center gap-2 transition-all"
              >
-                <LayoutTemplate className="w-3.5 h-3.5 text-zinc-500" />
+                <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
                 <span>L-Shape Plan</span>
              </button>
              <button 
                onClick={() => applyPreset('u-shape')}
-               className="p-2 text-left hover:bg-zinc-800 rounded text-xs font-medium text-zinc-300 flex items-center gap-2 transition-all"
+               className="p-2 text-left hover:bg-slate-50 rounded text-xs font-semibold text-slate-600 flex items-center gap-2 transition-all"
              >
-                <LayoutTemplate className="w-3.5 h-3.5 text-zinc-500" />
+                <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
                 <span>U-Shape Plan</span>
              </button>
            </div>
         </div>
 
         {/* Informative Instructions Help Box */}
-        <div className="absolute bottom-4 left-4 z-20 max-w-xs bg-[#18181b]/95 border border-[#27272a] p-3 rounded-xl backdrop-blur shadow-xl flex gap-2.5 items-start">
-           <HelpCircle className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+        <div className="absolute bottom-4 left-4 z-20 max-w-xs bg-white/95 border border-slate-200 p-3 rounded-xl backdrop-blur shadow-lg flex gap-2.5 items-start">
+           <HelpCircle className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-white uppercase tracking-wider">How to Edit:</span>
-              <p className="text-[10px] text-zinc-400 leading-relaxed">
-                • Drag any corner <b className="text-indigo-300">Node</b> to adjust wall shapes.
+              <span className="text-[10px] font-bold text-slate-800 uppercase tracking-wider">How to Edit:</span>
+              <p className="text-[10px] text-slate-500 leading-relaxed">
+                • Drag any corner <b className="text-indigo-600 font-semibold">Node</b> to adjust wall shapes.
                 <br />
-                • Click on a wall line segment to <b className="text-indigo-300">Add a corner node</b>.
+                • Click on a wall line segment to <b className="text-indigo-600 font-semibold">Add a corner node</b>.
                 <br />
                 • Presets let you instantly load standard architectural layouts.
               </p>
@@ -362,10 +362,10 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
 
         {/* Selected Vertex HUD Details */}
         {hoveredPointIndex !== null && room.points.length > 3 && (
-          <div className="absolute top-4 right-4 z-20 bg-[#18181b]/95 border border-red-500/20 p-3 rounded-xl backdrop-blur shadow-xl flex items-center gap-3">
+          <div className="absolute top-4 right-4 z-20 bg-white/95 border border-red-200 p-3 rounded-xl backdrop-blur shadow-lg flex items-center gap-3">
             <div className="flex flex-col">
-              <span className="text-[9px] font-bold text-red-400 uppercase tracking-wider">CORNER INDEX {hoveredPointIndex + 1}</span>
-              <span className="text-xs font-mono font-bold text-white">X: {room.points[hoveredPointIndex].x.toFixed(1)}m | Y: {room.points[hoveredPointIndex].y.toFixed(1)}m</span>
+              <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">CORNER INDEX {hoveredPointIndex + 1}</span>
+              <span className="text-xs font-mono font-bold text-slate-800">X: {room.points[hoveredPointIndex].x.toFixed(1)}m | Y: {room.points[hoveredPointIndex].y.toFixed(1)}m</span>
             </div>
             <button 
               onPointerDown={(e) => {
@@ -373,7 +373,7 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
                 handleDeletePoint(hoveredPointIndex);
               }}
               title="Delete Corner Node"
-              className="p-2 bg-red-950/40 border border-red-500/30 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all"
+              className="p-2 bg-red-50 hover:bg-red-500 text-red-600 hover:text-white border border-red-100 rounded-lg transition-all"
             >
               <Trash2 className="w-4 h-4" />
             </button>
@@ -381,7 +381,7 @@ export const BlueprintEditor = ({ room, setRoom, uploadedImage }: BlueprintEdito
         )}
 
         {/* Footer Scale indicator */}
-        <div className="absolute bottom-4 right-4 px-4 py-2 bg-[#18181b]/90 border border-[#27272a] rounded-lg text-[10px] font-bold text-zinc-500 uppercase tracking-widest pointer-events-none select-none font-mono">
+        <div className="absolute bottom-4 right-4 px-4 py-2 bg-white/90 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-400 uppercase tracking-widest pointer-events-none select-none font-mono shadow-sm">
            Metric Grid: Metres (m) | 1 unit = 1m
         </div>
       </div>

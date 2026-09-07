@@ -61,7 +61,7 @@ const SceneContent = ({ room, material, facadeMaterial, floorCount }: SceneProps
         />
       </Suspense>
 
-      <gridHelper args={[40, 40, '#27272a', '#161618']} position={[0, -0.01, 0]} rotation={[0, 0, 0]} />
+      <gridHelper args={[40, 40, '#cbd5e1', '#e2e8f0']} position={[0, -0.01, 0]} rotation={[0, 0, 0]} />
     </>
   );
 };
@@ -72,7 +72,7 @@ interface SceneWrapperProps extends SceneProps {
 
 export const Scene = ({ room, material, facadeMaterial, floorCount, onCapture }: SceneWrapperProps) => {
   return (
-    <div id="threejs-viewport-canvas-container" className="w-full h-full bg-[#09090b] relative overflow-hidden">
+    <div id="threejs-viewport-canvas-container" className="w-full h-full bg-slate-50 relative overflow-hidden">
       <Canvas 
         shadows 
         gl={{ preserveDrawingBuffer: true, antialias: true }}
