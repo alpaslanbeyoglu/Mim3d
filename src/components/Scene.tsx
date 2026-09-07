@@ -1,5 +1,5 @@
 import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Environment, ContactShadows, Float } from '@react-three/drei';
+import { OrbitControls, PerspectiveCamera, ContactShadows, Float } from '@react-three/drei';
 import { RoomMesh } from './RoomMesh';
 import { RoomData, MaterialOption } from '../types';
 import { Suspense, useCallback } from 'react';
@@ -23,9 +23,26 @@ const SceneContent = ({ room, material, facadeMaterial, floorCount }: SceneProps
         dampingFactor={0.05}
       />
       
-      <ambientLight intensity={0.5} />
-      <spotLight position={[10, 15, 10]} angle={0.3} penumbra={1} castShadow intensity={2} />
-      <pointLight position={[-10, 5, -10]} intensity={0.5} />
+      {/* High-Fidelity Studio Lighting Rig (Eliminates External HDR / CDN dependencies) */}
+      <ambientLight intensity={0.2} />
+      
+      {/* Soft natural ambient hemisphere */}
+      <hemisphereLight intensity={0.6} color="#ffffff" groundColor="#18181b" />
+      
+      {/* Enterprise Indigo Accent/Rim Light for premium visual depth */}
+      <directionalLight position={[-15, 12, -15]} intensity={0.7} color="#818cf8" />
+      
+      {/* Bright warm sunlight to define shapes */}
+      <directionalLight 
+        position={[12, 18, 12]} 
+        intensity={1.3} 
+        castShadow 
+        shadow-mapSize={[1024, 1024]}
+        shadow-bias={-0.0001}
+      />
+      
+      {/* Main Spot Light */}
+      <spotLight position={[10, 20, 10]} angle={0.3} penumbra={1} castShadow intensity={1.5} />
 
       <Suspense fallback={null}>
         <RoomMesh 
@@ -34,7 +51,6 @@ const SceneContent = ({ room, material, facadeMaterial, floorCount }: SceneProps
           facadeMaterial={facadeMaterial} 
           floorCount={floorCount} 
         />
-        <Environment preset="city" />
         <ContactShadows 
           position={[0, 0, 0]} 
           opacity={0.4} 
