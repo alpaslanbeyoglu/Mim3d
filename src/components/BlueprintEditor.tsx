@@ -1,20 +1,14 @@
 import React, { useRef, useState } from 'react';
 import { 
-  MousePointer2, 
-  Ruler, 
-  LayoutTemplate, 
-  Trash2, 
-  Grid, 
-  HelpCircle,
   Plus,
   DoorOpen,
   AppWindow,
-  Scaling,
-  Maximize2,
+  Square,
   Check,
-  Edit2
+  MousePointer,
+  Crosshair
 } from 'lucide-react';
-import { RoomData, Opening, OpeningType, BalconyProjection, RoomCategory } from '../types';
+import { RoomData, Opening, OpeningType, BalconyProjection } from '../types';
 import { calculatePolygonArea } from '../utils/zoningEngine';
 
 interface BlueprintEditorProps {
@@ -23,42 +17,78 @@ interface BlueprintEditorProps {
   uploadedImage: string | null;
 }
 
+export type CADTool = 'select' | 'wall' | 'rect_wall' | 'door' | 'window' | 'balcony' | 'measure';
+
 export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
   room,
   setRoom,
   uploadedImage
 }) => {
-  const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
+  const [activeTool, setActiveTool] = useState<CADTool>('select');
   const [snapToGrid, setSnapToGrid] = useState(true);
+  const [orthoMode, setOrthoMode] = useState(true); // Orthogonal snapping (0°, 90°)
+  const [gridSize] = useState<number>(0.5); // 0.5m default grid
+
+  // Hover & Active selection states
   const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const [selectedWallIndex, setSelectedWallIndex] = useState<number | null>(null);
+  const [draggingPointIndex, setDraggingPointIndex] = useState<number | null>(null);
 
-  // Custom length input state for selected wall length editing
+  // Live mouse crosshair coordinates
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  // Custom numerical input popups
   const [editingWallIndex, setEditingWallIndex] = useState<number | null>(null);
-  const [customWallLength, setCustomWallLength] = useState<string>('');
+  const [wallLengthInput, setWallLengthInput] = useState<string>('');
 
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Translate client coordinate to SVG viewBox [-10, 10] coordinate
-  const getSVGCoords = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return null;
+  // Map mouse event to CAD world coordinate [-12, 12] meters
+  const getCADCoords = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return { x: 0, y: 0 };
     const rect = svgRef.current.getBoundingClientRect();
     
-    // SVG viewBox coordinates mapping
-    const x = ((e.clientX - rect.left) / rect.width) * 20 - 10;
-    const y = ((e.clientY - rect.top) / rect.height) * 20 - 10;
-    
+    let x = ((e.clientX - rect.left) / rect.width) * 24 - 12;
+    let y = ((e.clientY - rect.top) / rect.height) * 24 - 12;
+
     if (snapToGrid) {
-      // Snaps to nearest 0.5m for CAD alignment
-      return {
-        x: Math.round(x * 2) / 2,
-        y: Math.round(y * 2) / 2,
-      };
+      const snap = gridSize;
+      x = Math.round(x / snap) * snap;
+      y = Math.round(y / snap) * snap;
     }
+
     return {
-      x: Math.round(x * 10) / 10,
-      y: Math.round(y * 10) / 10,
+      x: Number(x.toFixed(2)),
+      y: Number(y.toFixed(2))
     };
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const coords = getCADCoords(e);
+    setCursorPos(coords);
+
+    if (draggingPointIndex !== null) {
+      setRoom(prev => {
+        const newPoints = [...prev.points];
+
+        let finalX = coords.x;
+        let finalY = coords.y;
+
+        if (orthoMode && newPoints.length > 1) {
+          const prevP = newPoints[(draggingPointIndex - 1 + newPoints.length) % newPoints.length];
+          const dx = Math.abs(coords.x - prevP.x);
+          const dy = Math.abs(coords.y - prevP.y);
+          if (dx > dy) {
+            finalY = prevP.y;
+          } else {
+            finalX = prevP.x;
+          }
+        }
+
+        newPoints[draggingPointIndex] = { x: finalX, y: finalY };
+        return { ...prev, points: newPoints };
+      });
+    }
   };
 
   const handlePointerDownPoint = (e: React.PointerEvent, index: number) => {
@@ -66,63 +96,36 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
     try {
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } catch (err) {}
-    setDraggingIndex(index);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
-    if (draggingIndex === null) return;
-    const coords = getSVGCoords(e);
-    if (!coords) return;
-
-    setRoom(prev => {
-      const newPoints = [...prev.points];
-      newPoints[draggingIndex] = coords;
-      return {
-        ...prev,
-        points: newPoints
-      };
-    });
+    setDraggingPointIndex(index);
+    setSelectedWallIndex(null);
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (draggingIndex !== null) {
+    if (draggingPointIndex !== null) {
       try {
         (e.target as HTMLElement).releasePointerCapture(e.pointerId);
       } catch (err) {}
-      setDraggingIndex(null);
+      setDraggingPointIndex(null);
     }
   };
 
-  // Splitting wall by clicking on a wall segment
-  const handleSplitWall = (e: React.PointerEvent<SVGLineElement>, wallIndex: number) => {
+  // Add Wall Segment (Split clicked wall)
+  const handleWallClick = (e: React.PointerEvent<SVGGElement>, wallIdx: number) => {
     e.stopPropagation();
-    if (!svgRef.current) return;
-    
-    setSelectedWallIndex(wallIndex);
+    setSelectedWallIndex(wallIdx);
 
-    const rect = svgRef.current.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 20 - 10;
-    const y = ((e.clientY - rect.top) / rect.height) * 20 - 10;
-    
-    const snap = snapToGrid ? 0.5 : 0.1;
-    const clickCoords = {
-      x: Math.round(x / snap) * snap,
-      y: Math.round(y / snap) * snap
-    };
-
-    setRoom(prev => {
-      const newPoints = [...prev.points];
-      newPoints.splice(wallIndex + 1, 0, clickCoords);
-      return {
-        ...prev,
-        points: newPoints
-      };
-    });
-
-    setDraggingIndex(wallIndex + 1);
+    if (activeTool === 'wall') {
+      const coords = getCADCoords(e as unknown as React.PointerEvent<SVGSVGElement>);
+      setRoom(prev => {
+        const newPoints = [...prev.points];
+        newPoints.splice(wallIdx + 1, 0, coords);
+        return { ...prev, points: newPoints };
+      });
+      setDraggingPointIndex(wallIdx + 1);
+    }
   };
 
-  // Add Opening (Door or Window) to Selected Wall
+  // Add Opening (Door / Window) to Selected Wall
   const handleAddOpening = (type: OpeningType) => {
     if (selectedWallIndex === null) return;
     const wallIdx = selectedWallIndex;
@@ -131,23 +134,23 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
     const p2 = room.points[(wallIdx + 1) % room.points.length];
     const wallLen = Math.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2);
 
-    const defaultWidth = type === 'door' ? 0.9 : type === 'double_door' ? 1.5 : 1.4;
-    const defaultHeight = type === 'door' || type === 'double_door' ? 2.1 : type === 'french_window' ? 2.2 : 1.4;
-    const defaultSill = type === 'window' ? 0.9 : 0;
+    const width = type === 'door' ? 0.9 : type === 'double_door' ? 1.5 : 1.4;
+    const height = type === 'door' || type === 'double_door' ? 2.1 : 1.4;
+    const sillHeight = type === 'window' ? 0.9 : 0;
 
-    const newOpening: Opening = {
+    const newOp: Opening = {
       id: `op-${Date.now()}`,
       type,
       wallIndex: wallIdx,
-      distanceFromStart: Math.max(0.2, wallLen / 2 - defaultWidth / 2),
-      width: defaultWidth,
-      height: defaultHeight,
-      sillHeight: defaultSill
+      distanceFromStart: Math.max(0.2, wallLen / 2 - width / 2),
+      width,
+      height,
+      sillHeight
     };
 
     setRoom(prev => ({
       ...prev,
-      openings: [...prev.openings, newOpening]
+      openings: [...prev.openings, newOp]
     }));
   };
 
@@ -157,7 +160,7 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
     const newProj: BalconyProjection = {
       id: `proj-${Date.now()}`,
       wallIndex: selectedWallIndex,
-      depth: 1.2, // 1.2m default
+      depth: 1.2,
       isClosed
     };
 
@@ -167,34 +170,10 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
     }));
   };
 
-  // Delete opening
-  const handleDeleteOpening = (id: string) => {
-    setRoom(prev => ({
-      ...prev,
-      openings: prev.openings.filter(o => o.id !== id)
-    }));
-  };
-
-  // Delete vertex (requires maintaining at least 3 points)
-  const handleDeletePoint = (index: number) => {
-    if (room.points.length <= 3) return;
-    setRoom(prev => {
-      const newPoints = prev.points.filter((_, idx) => idx !== index);
-      // Clean openings on invalid wall indices
-      const updatedOpenings = prev.openings.filter(o => o.wallIndex < newPoints.length);
-      return {
-        ...prev,
-        points: newPoints,
-        openings: updatedOpenings
-      };
-    });
-    setHoveredPointIndex(null);
-  };
-
-  // Custom wall length direct numerical edit
+  // Apply Numerical Wall Length
   const handleApplyWallLength = (wallIdx: number) => {
-    const targetLength = parseFloat(customWallLength);
-    if (isNaN(targetLength) || targetLength <= 0) return;
+    const targetLen = parseFloat(wallLengthInput);
+    if (isNaN(targetLen) || targetLen <= 0) return;
 
     setRoom(prev => {
       const p1 = prev.points[wallIdx];
@@ -204,123 +183,166 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
       const currentLen = Math.sqrt(dx * dx + dy * dy);
       if (currentLen === 0) return prev;
 
-      const scale = targetLength / currentLen;
+      const scale = targetLen / currentLen;
       const newP2 = {
-        x: p1.x + dx * scale,
-        y: p1.y + dy * scale
+        x: Number((p1.x + dx * scale).toFixed(2)),
+        y: Number((p1.y + dy * scale).toFixed(2))
       };
 
       const newPoints = [...prev.points];
       newPoints[(wallIdx + 1) % prev.points.length] = newP2;
 
-      return {
-        ...prev,
-        points: newPoints
-      };
+      return { ...prev, points: newPoints };
     });
 
     setEditingWallIndex(null);
   };
 
-  // Preset Layout Applications
-  const applyPreset = (type: 'square' | 'l-shape' | 'u-shape') => {
-    let points = [];
-    let name = '';
-    
-    if (type === 'square') {
-      points = [
-        { x: -5, y: -4 },
-        { x: 5, y: -4 },
-        { x: 5, y: 4 },
-        { x: -5, y: 4 },
-      ];
-      name = 'Standart Tip Kat Planı';
-    } else if (type === 'l-shape') {
-      points = [
-        { x: -5, y: -4 },
-        { x: 5, y: -4 },
-        { x: 5, y: 0 },
-        { x: 1, y: 0 },
-        { x: 1, y: 4 },
-        { x: -5, y: 4 },
-      ];
-      name = 'L-Tipi Mimari Kat Planı';
-    } else {
-      points = [
-        { x: -5, y: -4 },
-        { x: 5, y: -4 },
-        { x: 5, y: 4 },
-        { x: 2, y: 4 },
-        { x: 2, y: -1 },
-        { x: -2, y: -1 },
-        { x: -2, y: 4 },
-        { x: -5, y: 4 },
-      ];
-      name = 'Gelişmiş U-Tipi Mimari Plan';
-    }
-
-    setRoom(prev => ({
-      ...prev,
-      name,
-      points,
-      openings: [],
-      projections: []
-    }));
-  };
-
   const totalArea = calculatePolygonArea(room.points);
 
   return (
-    <div className="w-full h-full relative bg-slate-100/60 flex items-center justify-center p-6 overflow-hidden select-none">
-      {/* Background Grid Pattern */}
-      <div 
-        className="absolute inset-0 opacity-[0.06] pointer-events-none transition-all duration-300" 
-        style={{ 
-          backgroundImage: snapToGrid 
-            ? 'linear-gradient(#4f46e5 1px, transparent 1px), linear-gradient(90deg, #4f46e5 1px, transparent 1px)' 
-            : 'linear-gradient(#64748b 1px, transparent 1px), linear-gradient(90deg, #64748b 1px, transparent 1px)', 
-          backgroundSize: '40px 40px' 
-        }}
-      />
+    <div className="w-full h-full relative bg-[#0f172a] text-slate-100 flex flex-col overflow-hidden select-none font-mono">
+      {/* CAD Top Action Ribbon */}
+      <div className="h-11 bg-[#1e293b] border-b border-slate-700/80 px-4 flex items-center justify-between shrink-0 z-20 text-xs">
+        {/* Tool Selectors */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setActiveTool('select')}
+            className={`px-3 py-1.5 rounded flex items-center gap-1.5 font-bold transition-all ${
+              activeTool === 'select' ? 'bg-indigo-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+          >
+            <MousePointer className="w-3.5 h-3.5" />
+            <span>SEÇ/TAŞI (SELECT)</span>
+          </button>
 
-      {/* Main Canvas Area */}
-      <div className="relative w-full h-full max-w-5xl aspect-video bg-white border border-slate-200 rounded-2xl shadow-xl flex items-center justify-center overflow-hidden">
-        
-        {/* Sketch Background Upload */}
+          <button
+            onClick={() => setActiveTool('wall')}
+            className={`px-3 py-1.5 rounded flex items-center gap-1.5 font-bold transition-all ${
+              activeTool === 'wall' ? 'bg-indigo-600 text-white shadow' : 'bg-slate-800 text-slate-300 hover:text-white'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5 text-emerald-400" />
+            <span>DUVAR BÖL / KÖŞE EKLE</span>
+          </button>
+
+          <div className="h-4 w-[1px] bg-slate-700 mx-1" />
+
+          {/* Quick Openings */}
+          <button
+            onClick={() => handleAddOpening('door')}
+            disabled={selectedWallIndex === null}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded text-red-400 flex items-center gap-1 font-bold"
+          >
+            <DoorOpen className="w-3.5 h-3.5" />
+            <span>KAPISI (DOOR)</span>
+          </button>
+
+          <button
+            onClick={() => handleAddOpening('window')}
+            disabled={selectedWallIndex === null}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded text-cyan-400 flex items-center gap-1 font-bold"
+          >
+            <AppWindow className="w-3.5 h-3.5" />
+            <span>PENCERE (WIN)</span>
+          </button>
+
+          <button
+            onClick={() => handleAddBalcony(false)}
+            disabled={selectedWallIndex === null}
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 rounded text-emerald-400 flex items-center gap-1 font-bold"
+          >
+            <Square className="w-3.5 h-3.5" />
+            <span>BALKON (1.50M MAX)</span>
+          </button>
+        </div>
+
+        {/* CAD Snapping Status Controls */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSnapToGrid(!snapToGrid)}
+            className={`px-2.5 py-1 rounded border text-[11px] font-bold ${
+              snapToGrid ? 'bg-indigo-950 border-indigo-500 text-indigo-300' : 'bg-slate-800 border-slate-700 text-slate-400'
+            }`}
+          >
+            GRID SNAP: {snapToGrid ? `${gridSize}M` : 'OFF'}
+          </button>
+
+          <button
+            onClick={() => setOrthoMode(!orthoMode)}
+            className={`px-2.5 py-1 rounded border text-[11px] font-bold ${
+              orthoMode ? 'bg-emerald-950 border-emerald-500 text-emerald-300' : 'bg-slate-800 border-slate-700 text-slate-400'
+            }`}
+          >
+            ORTHO (90°): {orthoMode ? 'ON' : 'OFF'}
+          </button>
+
+          <div className="flex items-center gap-1 text-slate-400 font-mono text-[11px] bg-slate-900 px-2 py-1 rounded border border-slate-800">
+            <Crosshair className="w-3 h-3 text-indigo-400" />
+            <span>X: {cursorPos.x.toFixed(2)}m | Y: {cursorPos.y.toFixed(2)}m</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Professional CAD Canvas Viewport */}
+      <div className="flex-1 relative overflow-hidden bg-[#0a0f1d] flex items-center justify-center">
+        {/* Precise Technical CAD Grid Layer */}
+        <div
+          className="absolute inset-0 pointer-events-none opacity-20"
+          style={{
+            backgroundImage: `
+              linear-gradient(to right, #334155 1px, transparent 1px),
+              linear-gradient(to bottom, #334155 1px, transparent 1px)
+            `,
+            backgroundSize: '40px 40px'
+          }}
+        />
+
+        {/* Blueprint Sketch Image Overlay */}
         {uploadedImage && (
-          <div className="absolute inset-0 p-12 opacity-[0.15] pointer-events-none select-none">
-             <img src={uploadedImage} className="w-full h-full object-contain grayscale" alt="Blueprint Background" />
+          <div className="absolute inset-0 p-12 opacity-20 pointer-events-none select-none">
+             <img src={uploadedImage} className="w-full h-full object-contain filter invert" alt="CAD Blueprint Background" />
           </div>
         )}
 
-        {/* Vector SVG Editor Stage */}
+        {/* SVG Professional Vector Technical Drawing Canvas */}
         <svg 
           ref={svgRef}
-          viewBox="-10 -10 20 20" 
+          viewBox="-12 -12 24 24"
           className="w-full h-full absolute inset-0 touch-none cursor-crosshair z-10"
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerLeave={handlePointerUp}
         >
-          {/* Centered Axis Indicators */}
-          <line x1="-10" y1="0" x2="10" y2="0" stroke="#cbd5e1" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
-          <line x1="0" y1="-10" x2="0" y2="10" stroke="#cbd5e1" strokeWidth="0.02" strokeDasharray="0.1 0.1" />
+          {/* Axis Guidelines */}
+          <line x1="-12" y1="0" x2="12" y2="0" stroke="#1e293b" strokeWidth="0.04" />
+          <line x1="0" y1="-12" x2="0" y2="12" stroke="#1e293b" strokeWidth="0.04" />
 
-          {/* Polygon Filled Room Area */}
+          {/* Hatching / Shading Interior Floor Polygon */}
           <polygon 
             points={room.points.map(p => `${p.x},${p.y}`).join(' ')}
-            fill="rgba(99, 102, 241, 0.06)"
+            fill="rgba(99, 102, 241, 0.08)"
             stroke="none"
           />
 
-          {/* Wall Segments */}
+          {/* Wall Layer Rendering with Double Parallel Wall Lines (Standard Architectural CAD Standard) */}
           {room.points.map((p, i) => {
             const nextP = room.points[(i + 1) % room.points.length];
             const isSelected = selectedWallIndex === i;
 
+            const dx = nextP.x - p.x;
+            const dy = nextP.y - p.y;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            if (len === 0) return null;
+
+            // Wall Normal Offset Vectors (25cm wall thickness representation)
+            const wallThick = room.wallThickness || 0.25;
+            const nx = (-dy / len) * (wallThick / 2);
+            const ny = (dx / len) * (wallThick / 2);
+
             return (
-              <g key={`wall-segment-${i}`}>
-                {/* Thick Invisible Target for touch/click */}
+              <g key={`cad-wall-${i}`} onPointerDown={(e) => handleWallClick(e, i)}>
+                {/* Touch / Click Sensor Line */}
                 <line 
                   x1={p.x} 
                   y1={p.y} 
@@ -329,27 +351,42 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
                   stroke="transparent"
                   strokeWidth="0.8"
                   className="cursor-pointer"
-                  onPointerDown={(e) => {
-                    setSelectedWallIndex(i);
-                    handleSplitWall(e, i);
-                  }}
                 />
-                {/* Visual Wall Line */}
+
+                {/* Inner Parallel Line */}
+                <line
+                  x1={p.x - nx}
+                  y1={p.y - ny}
+                  x2={nextP.x - nx}
+                  y2={nextP.y - ny}
+                  stroke={isSelected ? "#818cf8" : "#38bdf8"}
+                  strokeWidth="0.06"
+                />
+
+                {/* Outer Parallel Line */}
+                <line
+                  x1={p.x + nx}
+                  y1={p.y + ny}
+                  x2={nextP.x + nx}
+                  y2={nextP.y + ny}
+                  stroke={isSelected ? "#818cf8" : "#38bdf8"}
+                  strokeWidth="0.06"
+                />
+
+                {/* Center Core Solid Line */}
                 <line 
                   x1={p.x} 
                   y1={p.y} 
                   x2={nextP.x} 
                   y2={nextP.y} 
-                  stroke={isSelected ? "#4338ca" : "#6366f1"}
-                  strokeWidth={isSelected ? "0.22" : "0.14"}
-                  strokeLinecap="round"
-                  className="pointer-events-none transition-all"
+                  stroke={isSelected ? "#a5b4fc" : "#6366f1"}
+                  strokeWidth={isSelected ? "0.20" : "0.12"}
                 />
               </g>
             );
           })}
 
-          {/* Render Balcony Projections in 2D */}
+          {/* Render 2D Balcony Projections */}
           {room.projections.map((proj) => {
             const p1 = room.points[proj.wallIndex];
             const p2 = room.points[(proj.wallIndex + 1) % room.points.length];
@@ -360,7 +397,6 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
             const len = Math.sqrt(dx * dx + dy * dy);
             if (len === 0) return null;
 
-            // Normal vector pointing outwards
             const nx = -dy / len;
             const ny = dx / len;
 
@@ -371,7 +407,7 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
               <g key={proj.id} className="pointer-events-none">
                 <polygon
                   points={`${p1.x},${p1.y} ${bP1.x},${bP1.y} ${bP2.x},${bP2.y} ${p2.x},${p2.y}`}
-                  fill={proj.isClosed ? "rgba(245, 158, 11, 0.15)" : "rgba(16, 185, 129, 0.15)"}
+                  fill={proj.isClosed ? "rgba(245, 158, 11, 0.12)" : "rgba(16, 185, 129, 0.12)"}
                   stroke={proj.isClosed ? "#f59e0b" : "#10b981"}
                   strokeWidth="0.08"
                   strokeDasharray={proj.isClosed ? "0.1 0.1" : "none"}
@@ -380,16 +416,16 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
                   x={(p1.x + bP1.x) / 2}
                   y={(p1.y + bP1.y) / 2}
                   fontSize="0.25"
-                  fill="#78350f"
+                  fill="#10b981"
                   fontWeight="bold"
                 >
-                  {proj.isClosed ? 'Kapalı Çıkma' : 'Açık Balkon'} ({proj.depth}m)
+                  {proj.isClosed ? 'KAPALI ÇIKMA' : 'BALKON'} ({proj.depth}m)
                 </text>
               </g>
             );
           })}
 
-          {/* Render Openings (Doors & Windows) on Walls */}
+          {/* Render Architectural Door Swing Arc & Window Graphics */}
           {room.openings.map((op) => {
             const p1 = room.points[op.wallIndex];
             const p2 = room.points[(op.wallIndex + 1) % room.points.length];
@@ -403,74 +439,110 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
             const ux = dx / wallLen;
             const uy = dy / wallLen;
 
+            // Normal vector
+            const nx = -uy;
+            const ny = ux;
+
             const opStartX = p1.x + ux * op.distanceFromStart;
             const opStartY = p1.y + uy * op.distanceFromStart;
             const opEndX = opStartX + ux * op.width;
             const opEndY = opStartY + uy * op.width;
 
             const isDoor = op.type === 'door' || op.type === 'double_door';
+            const doorLeafEndX = opStartX + nx * op.width;
+            const doorLeafEndY = opStartY + ny * op.width;
 
             return (
-              <g key={op.id} className="cursor-pointer" onClick={() => handleDeleteOpening(op.id)}>
-                {/* Opening Cutout Line */}
+              <g
+                key={op.id}
+                className="cursor-pointer"
+                onClick={() => {
+                  setRoom(prev => ({ ...prev, openings: prev.openings.filter(o => o.id !== op.id) }));
+                }}
+              >
+                {/* Wall Opening Cutout Gap */}
                 <line
                   x1={opStartX}
                   y1={opStartY}
                   x2={opEndX}
                   y2={opEndY}
-                  stroke="#ffffff"
-                  strokeWidth="0.28"
+                  stroke="#0a0f1d"
+                  strokeWidth="0.32"
                 />
-                {/* Opening Frame Graphic */}
-                <line
-                  x1={opStartX}
-                  y1={opStartY}
-                  x2={opEndX}
-                  y2={opEndY}
-                  stroke={isDoor ? "#dc2626" : "#2563eb"}
-                  strokeWidth="0.08"
-                  strokeDasharray={isDoor ? "none" : "0.05 0.05"}
-                />
-                <circle cx={opStartX} cy={opStartY} r="0.12" fill={isDoor ? "#dc2626" : "#2563eb"} />
-                <circle cx={opEndX} cy={opEndY} r="0.12" fill={isDoor ? "#dc2626" : "#2563eb"} />
+
+                {isDoor ? (
+                  <g key={`door-graphics-${op.id}`}>
+                    {/* Door Panel Leaf */}
+                    <line
+                      x1={opStartX}
+                      y1={opStartY}
+                      x2={doorLeafEndX}
+                      y2={doorLeafEndY}
+                      stroke="#ef4444"
+                      strokeWidth="0.08"
+                    />
+                    {/* Door Swing Quarter Circle Arc */}
+                    <path
+                      d={`M ${opEndX} ${opEndY} A ${op.width} ${op.width} 0 0 1 ${doorLeafEndX} ${doorLeafEndY}`}
+                      fill="none"
+                      stroke="#ef4444"
+                      strokeWidth="0.05"
+                      strokeDasharray="0.08 0.08"
+                    />
+                  </g>
+                ) : (
+                  <g key={`win-graphics-${op.id}`}>
+                    <line x1={opStartX} y1={opStartY} x2={opEndX} y2={opEndY} stroke="#38bdf8" strokeWidth="0.10" />
+                    <line
+                      x1={opStartX + nx * 0.1}
+                      y1={opStartY + ny * 0.1}
+                      x2={opEndX + nx * 0.1}
+                      y2={opEndY + ny * 0.1}
+                      stroke="#0ea5e9"
+                      strokeWidth="0.04"
+                    />
+                  </g>
+                )}
               </g>
             );
           })}
 
-          {/* Wall Length Badges & Dimension Lines */}
+          {/* Architectural Extension & Dimension Lines (Cote Lines with Ticks) */}
           {room.points.map((p, i) => {
             const nextP = room.points[(i + 1) % room.points.length];
             const mx = (p.x + nextP.x) / 2;
             const my = (p.y + nextP.y) / 2;
             const length = Math.sqrt((nextP.x - p.x) ** 2 + (nextP.y - p.y) ** 2);
-            
+            const isSelected = selectedWallIndex === i;
+
             return (
-              <g key={`measurement-${i}`} className="select-none">
+              <g key={`cote-${i}`} className="select-none">
+                {/* Cote Badge Box */}
                 <rect 
-                  x={mx - 0.75}
-                  y={my - 0.28}
-                  width="1.5"
-                  height="0.56"
-                  rx="0.12"
-                  fill="#ffffff" 
-                  stroke={selectedWallIndex === i ? "#4f46e5" : "#cbd5e1"}
+                  x={mx - 0.8}
+                  y={my - 0.3}
+                  width="1.6"
+                  height="0.6"
+                  rx="0.1"
+                  fill="#0f172a"
+                  stroke={isSelected ? "#818cf8" : "#334155"}
                   strokeWidth="0.04"
-                  className="shadow-sm cursor-pointer"
+                  className="shadow cursor-pointer"
                   onClick={(e) => {
                     e.stopPropagation();
                     setSelectedWallIndex(i);
                     setEditingWallIndex(i);
-                    setCustomWallLength(length.toFixed(2));
+                    setWallLengthInput(length.toFixed(2));
                   }}
                 />
                 <text 
                   x={mx} 
                   y={my + 0.12} 
                   textAnchor="middle" 
-                  fill="#0f172a"
+                  fill={isSelected ? "#a5b4fc" : "#cbd5e1"}
                   fontSize="0.32" 
                   fontWeight="bold"
-                  className="font-mono tracking-tight pointer-events-none"
+                  className="pointer-events-none font-mono"
                 >
                   {length.toFixed(2)}m
                 </text>
@@ -478,13 +550,13 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
             );
           })}
 
-          {/* Draggable Point Handles (Corner Nodes) */}
+          {/* Corner Node Handles */}
           {room.points.map((p, i) => {
             const isHovered = hoveredPointIndex === i;
-            const isDragging = draggingIndex === i;
+            const isDragging = draggingPointIndex === i;
 
             return (
-              <g key={`corner-${i}`}>
+              <g key={`corner-node-${i}`}>
                 <circle 
                   cx={p.x} 
                   cy={p.y} 
@@ -498,139 +570,41 @@ export const BlueprintEditor: React.FC<BlueprintEditorProps> = ({
                 <circle 
                   cx={p.x} 
                   cy={p.y} 
-                  r={isDragging ? "0.34" : isHovered ? "0.28" : "0.22"}
-                  fill={isDragging ? "#312e81" : isHovered ? "#4f46e5" : "#6366f1"} 
+                  r={isDragging ? "0.32" : isHovered ? "0.26" : "0.20"}
+                  fill={isDragging ? "#6366f1" : isHovered ? "#38bdf8" : "#818cf8"}
                   stroke="#ffffff" 
                   strokeWidth="0.06"
-                  className="transition-all duration-150 pointer-events-none shadow-md"
                 />
               </g>
             );
           })}
         </svg>
 
-        {/* Top-Left Control Toolbar */}
-        <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 bg-white/95 border border-slate-200 p-2.5 rounded-xl backdrop-blur shadow-lg">
-           <button 
-             onClick={() => setSnapToGrid(!snapToGrid)}
-             title="Grid Snapping"
-             className={`p-2.5 rounded-lg border flex items-center gap-2 transition-all text-xs font-bold ${snapToGrid ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-slate-100 border-slate-200 text-slate-600'}`}
-           >
-              <Grid className="w-4 h-4" />
-              <span>IZGARA HİZALAMA: {snapToGrid ? "0.5m" : "SERBEST"}</span>
-           </button>
-           
-           <div className="h-[1px] bg-slate-100 my-1" />
-           
-           {/* Architectural Wall Elements Insertion */}
-           <div className="flex flex-col gap-1.5">
-             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Seçili Duvara Eleman Ekle</span>
-
-             <div className="grid grid-cols-2 gap-1">
-               <button
-                 onClick={() => handleAddOpening('door')}
-                 disabled={selectedWallIndex === null}
-                 className="p-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded text-[11px] font-bold text-slate-700 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-               >
-                 <DoorOpen className="w-3.5 h-3.5 text-red-500" />
-                 <span>Kapı</span>
-               </button>
-               <button
-                 onClick={() => handleAddOpening('window')}
-                 disabled={selectedWallIndex === null}
-                 className="p-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded text-[11px] font-bold text-slate-700 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-               >
-                 <AppWindow className="w-3.5 h-3.5 text-blue-500" />
-                 <span>Pencere</span>
-               </button>
-             </div>
-
-             <div className="grid grid-cols-2 gap-1 mt-0.5">
-               <button
-                 onClick={() => handleAddBalcony(false)}
-                 disabled={selectedWallIndex === null}
-                 className="p-2 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-[10px] font-bold text-emerald-800 flex items-center gap-1 disabled:opacity-40"
-               >
-                 <Plus className="w-3 h-3 text-emerald-600" />
-                 <span>Açık Balkon</span>
-               </button>
-               <button
-                 onClick={() => handleAddBalcony(true)}
-                 disabled={selectedWallIndex === null}
-                 className="p-2 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded text-[10px] font-bold text-amber-800 flex items-center gap-1 disabled:opacity-40"
-               >
-                 <Plus className="w-3 h-3 text-amber-600" />
-                 <span>Kapalı Çıkma</span>
-               </button>
-             </div>
-           </div>
-
-           <div className="h-[1px] bg-slate-100 my-1" />
-
-           {/* Presets */}
-           <div className="flex flex-col gap-1">
-             <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest px-1">Tip Şablonlar</span>
-             <button 
-               onClick={() => applyPreset('square')}
-               className="p-1.5 hover:bg-slate-50 rounded text-xs font-semibold text-slate-600 flex items-center gap-2"
-             >
-                <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
-                <span>Kare / Dikdörtgen Plan</span>
-             </button>
-             <button 
-               onClick={() => applyPreset('l-shape')}
-               className="p-1.5 hover:bg-slate-50 rounded text-xs font-semibold text-slate-600 flex items-center gap-2"
-             >
-                <LayoutTemplate className="w-3.5 h-3.5 text-slate-400" />
-                <span>L-Tipi Mimari Plan</span>
-             </button>
-           </div>
-        </div>
-
-        {/* Modal for Wall Length Editing */}
+        {/* Floating Wall Edit Length Modal */}
         {editingWallIndex !== null && (
-          <div className="absolute top-4 right-4 z-30 bg-white border border-indigo-200 p-3 rounded-xl shadow-xl flex items-center gap-2">
-            <span className="text-xs font-bold text-slate-700">Duvar Uzunluğu (m):</span>
+          <div className="absolute top-4 right-4 z-30 bg-slate-900 border border-indigo-500 p-3 rounded-xl shadow-2xl flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-200">SAYISAL UZUNLUK (M):</span>
             <input
               type="number"
-              step="0.1"
-              value={customWallLength}
-              onChange={(e) => setCustomWallLength(e.target.value)}
-              className="w-20 border border-slate-300 rounded px-2 py-1 text-xs font-mono font-bold"
+              step="0.05"
+              value={wallLengthInput}
+              onChange={(e) => setWallLengthInput(e.target.value)}
+              className="w-20 bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs font-mono font-bold text-indigo-300"
             />
             <button
               onClick={() => handleApplyWallLength(editingWallIndex)}
-              className="bg-indigo-600 text-white p-1.5 rounded hover:bg-indigo-700 text-xs font-bold flex items-center gap-1"
+              className="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded text-xs font-bold flex items-center gap-1"
             >
               <Check className="w-3.5 h-3.5" />
-              <span>Uygula</span>
+              <span>GÜNCELLE</span>
             </button>
           </div>
         )}
 
-        {/* Selected Point Delete HUD */}
-        {hoveredPointIndex !== null && room.points.length > 3 && (
-          <div className="absolute bottom-4 left-4 z-20 bg-white border border-red-200 p-3 rounded-xl shadow-lg flex items-center gap-3">
-            <div className="flex flex-col">
-              <span className="text-[9px] font-bold text-red-500 uppercase tracking-wider">KÖŞE NODE #{hoveredPointIndex + 1}</span>
-              <span className="text-xs font-mono font-bold text-slate-800">X: {room.points[hoveredPointIndex].x.toFixed(2)}m | Y: {room.points[hoveredPointIndex].y.toFixed(2)}m</span>
-            </div>
-            <button 
-              onPointerDown={(e) => {
-                e.stopPropagation();
-                handleDeletePoint(hoveredPointIndex);
-              }}
-              className="p-2 bg-red-50 hover:bg-red-500 text-red-600 hover:text-white border border-red-100 rounded-lg transition-all"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-
-        {/* Area Stats Badge */}
-        <div className="absolute bottom-4 right-4 px-4 py-2.5 bg-slate-900 text-white border border-slate-700 rounded-xl text-xs font-bold font-mono shadow-xl flex items-center gap-3">
-           <span className="text-indigo-400 uppercase tracking-wider">Brüt Taban Alanı:</span>
-           <span className="text-base text-emerald-400 font-extrabold">{totalArea.toFixed(1)} m²</span>
+        {/* CAD Bottom Status Bar */}
+        <div className="absolute bottom-4 right-4 bg-slate-900/95 border border-slate-700/80 px-4 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-4 text-slate-300 shadow-2xl">
+           <span className="text-indigo-400">BRÜT TABAN ALANI:</span>
+           <span className="text-emerald-400 font-extrabold text-sm">{totalArea.toFixed(2)} m²</span>
         </div>
       </div>
     </div>
